@@ -1,15 +1,6 @@
-import os
-import re
-import time
-import mmap
-import datetime
-import aiohttp
-import aiofiles
-import asyncio
-import logging
-import requests
-import tgcrypto
-import subprocess
+import os, re, time, mmap, datetime, requests, subprocess
+import aiohttp, aiofiles, asyncio, logging, tgcrypto
+
 import concurrent.futures
 from math import ceil
 from utils import progress_bar
@@ -21,6 +12,23 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from base64 import b64decode
 
+#======================================================================
+def get_youtube_video_id(url):
+    """
+    Extracts the video ID from a YouTube URL.
+    """
+    patterns = [
+        r'youtube\.com/watch\?v=([^&]+)',
+        r'youtu\.be/([^?&]+)',
+        r'youtube\.com/embed/([^?&]+)'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+#======================================================================
 def duration(filename):
     result = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
                              "format=duration", "-of",
@@ -29,23 +37,21 @@ def duration(filename):
         stderr=subprocess.STDOUT)
     return float(result.stdout)
 
-def get_mps_and_keys(api_url):
-    response = requests.get(api_url)
-    response_json = response.json()
-    mpd = response_json.get('MPD')
-    keys = response_json.get('KEYS')
-    return mpd, keys
-   
+#======================================================================
 def exec(cmd):
         process = subprocess.run(cmd, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         output = process.stdout.decode()
         print(output)
         return output
         #err = process.stdout.decode()
+
+#======================================================================
 def pull_run(work, cmds):
     with concurrent.futures.ThreadPoolExecutor(max_workers=work) as executor:
         print("Waiting for tasks to complete")
         fut = executor.map(exec,cmds)
+
+#======================================================================
 async def aio(url,name):
     k = f'{name}.pdf'
     async with aiohttp.ClientSession() as session:
@@ -56,7 +62,7 @@ async def aio(url,name):
                 await f.close()
     return k
 
-
+#======================================================================
 async def download(url,name):
     ka = f'{name}.pdf'
     async with aiohttp.ClientSession() as session:
@@ -67,17 +73,7 @@ async def download(url,name):
                 await f.close()
     return ka
 
-async def pdf_download(url, file_name, chunk_size=1024 * 10):
-    if os.path.exists(file_name):
-        os.remove(file_name)
-    r = requests.get(url, allow_redirects=True, stream=True)
-    with open(file_name, 'wb') as fd:
-        for chunk in r.iter_content(chunk_size=chunk_size):
-            if chunk:
-                fd.write(chunk)
-    return file_name   
-   
-
+#======================================================================
 def parse_vid_info(info):
     info = info.strip()
     info = info.split("\n")
@@ -98,7 +94,7 @@ def parse_vid_info(info):
                 pass
     return new_info
 
-
+#======================================================================
 def vid_info(info):
     info = info.strip()
     info = info.split("\n")
@@ -125,7 +121,7 @@ def vid_info(info):
                 pass
     return new_info
 
-
+#======================================================================
 async def decrypt_and_merge_video(mpd_url, keys_string, output_path, output_name, quality="720"):
     try:
         output_path = Path(output_path)
@@ -184,6 +180,7 @@ async def decrypt_and_merge_video(mpd_url, keys_string, output_path, output_name
         print(f"Error during decryption and merging: {str(e)}")
         raise
 
+#======================================================================
 async def run(cmd):
     proc = await asyncio.create_subprocess_shell(
         cmd,
@@ -201,7 +198,7 @@ async def run(cmd):
         return f'[stderr]\n{stderr.decode()}'
 
     
-
+#======================================================================
 def old_download(url, file_name, chunk_size = 1024 * 10):
     if os.path.exists(file_name):
         os.remove(file_name)
@@ -212,7 +209,7 @@ def old_download(url, file_name, chunk_size = 1024 * 10):
                 fd.write(chunk)
     return file_name
 
-
+#======================================================================
 def human_readable_size(size, decimal_places=2):
     for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
         if size < 1024.0 or unit == 'PB':
@@ -220,14 +217,14 @@ def human_readable_size(size, decimal_places=2):
         size /= 1024.0
     return f"{size:.{decimal_places}f} {unit}"
 
-
+#======================================================================
 def time_name():
     date = datetime.date.today()
     now = datetime.datetime.now()
     current_time = now.strftime("%H%M%S")
     return f"{date} {current_time}.mp4"
 
-
+#======================================================================
 async def download_video(url,cmd, name):
     download_cmd = f'{cmd} -R 25 --fragment-retries 25 --external-downloader aria2c --downloader-args "aria2c: -x 16 -j 32"'
     global failed_counter
@@ -256,7 +253,7 @@ async def download_video(url,cmd, name):
     except FileNotFoundError as exc:
         return os.path.isfile.splitext[0] + "." + "mp4"
 
-
+#======================================================================
 async def send_doc(bot: Client, m: Message, cc, ka, cc1, prog, count, name, channel_id):
     reply = await bot.send_message(channel_id, f"Downloading pdf:\n<pre><code>{name}</code></pre>")
     time.sleep(1)
@@ -268,7 +265,7 @@ async def send_doc(bot: Client, m: Message, cc, ka, cc1, prog, count, name, chan
     os.remove(ka)
     time.sleep(3) 
 
-
+#======================================================================
 def decrypt_file(file_path, key):  
     if not os.path.exists(file_path): 
         return False  
@@ -280,6 +277,7 @@ def decrypt_file(file_path, key):
                 mmapped_file[i] ^= ord(key[i]) if i < len(key) else i 
     return True  
 
+#======================================================================
 async def download_and_decrypt_video(url, cmd, name, key):  
     video_path = await download_video(url, cmd, name)  
     
@@ -292,6 +290,30 @@ async def download_and_decrypt_video(url, cmd, name, key):
             print(f"Failed to decrypt {video_path}.")  
             return None  
 
+#================= Spliting According to File Size ==================
+def duration(filename):
+    result = subprocess.run(f'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{filename}"', shell=True, capture_output=True, text=True)
+    return float(result.stdout.strip())
+
+def duration(part):
+    result = subprocess.run(f'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{part}"', shell=True, capture_output=True, text=True)
+    return float(result.stdout.strip())
+
+def split_video(filename, max_size):
+    parts = []
+    part_prefix = filename.split('.')[0]
+    total_duration = duration(filename)
+    file_size = os.path.getsize(filename)
+    segment_duration = ceil((total_duration * max_size) / file_size)
+    split_command = f'ffmpeg -y -i "{filename}" -c copy -map 0 -f segment -segment_time {segment_duration} -reset_timestamps 1 "{part_prefix}_part_%03d.mkv"'
+    subprocess.run(split_command, shell=True)
+    
+    for part in os.listdir():
+        if part.startswith(part_prefix) and part.endswith('.mkv'):
+            parts.append(part)
+    return parts
+
+#============================================================================================================================================
 async def send_vid(bot: Client, m: Message, cc, filename, vidwatermark, thumb, name, prog, channel_id):
     subprocess.run(f'ffmpeg -i "{filename}" -ss 00:00:10 -vframes 1 "{filename}.jpg"', shell=True)
     await prog.delete (True)
@@ -319,11 +341,31 @@ async def send_vid(bot: Client, m: Message, cc, filename, vidwatermark, thumb, n
     dur = int(duration(w_filename))
     start_time = time.time()
 
-    try:
-        await bot.send_video(channel_id, w_filename, caption=cc, supports_streaming=True, height=720, width=1280, thumb=thumbnail, duration=dur, progress=progress_bar, progress_args=(reply, start_time))
-    except Exception:
-        await bot.send_document(channel_id, w_filename, caption=cc, progress=progress_bar, progress_args=(reply, start_time))
+    max_size = 1.8 * 1024 * 1024 * 1024  # 1.8GB in bytes
+    file_size = os.path.getsize(w_filename)
+    
+    if file_size > max_size:
+        splitting_msg = await bot.send_message(channel_id, f"<blockquote>🛠 **Splitting video into parts**...\n⏰ **Please wait few minutes**...⏳</blockquote>")
+        parts = split_video(w_filename, max_size)
+        parts.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
+        for i, part in enumerate(parts):
+            part_dur = int(duration(part))
+            await splitting_msg.edit_text(f"<blockquote>**★彡 Uploading Spilt Part {i + 1} of {len(parts)} 彡★**</blockquote>")
+            try:
+                part_caption = f"⋅ ⋅ ─ ─ **Part {i + 1}** ─ ─ ⋅ ⋅ \n\n{cc}"
+                await bot.send_video(channel_id, part, caption=part_caption, supports_streaming=True, height=720, width=1280, thumb=thumbnail, duration=part_dur, progress=progress_bar, progress_args=(reply, start_time))  
+            except Exception:
+                await bot.send_document(channel_id, part, caption=part_caption, progress=progress_bar, progress_args=(reply, start_time))
+            os.remove(part)
+            await asyncio.sleep(3)
+        await splitting_msg.delete()
+    else:
+        try:
+            await bot.send_video(channel_id, w_filename, caption=cc, supports_streaming=True, height=720, width=1280, thumb=thumbnail, duration=dur, progress=progress_bar, progress_args=(reply, start_time))
+        except Exception:
+            await bot.send_document(channel_id, w_filename, caption=cc, progress=progress_bar, progress_args=(reply, start_time))
     os.remove(w_filename)
     await reply.delete(True)
     await reply1.delete(True)
     os.remove(f"{filename}.jpg")
+#============================================================================================================================================
